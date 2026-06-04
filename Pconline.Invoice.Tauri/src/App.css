@@ -1,0 +1,111 @@
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: #020617;
+  overflow: hidden;
+}
+
+.tracking-callback,
+.invoice-upload-page,
+.payment-upload-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ant-table-row.row-selected > td {
+  background-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+.status-pass,
+.status-successful {
+  color: #4ade80;
+}
+
+.status-uploading {
+  color: #60a5fa;
+}
+
+.status-exists {
+  color: #facc15;
+}
+
+.status-failed,
+.status-error {
+  color: #f97373;
+}
+
+.tracking-table-wrapper {
+  height: calc(100vh - 260px);
+  overflow: auto;
+}
+
+.tracking-table-wrapper .ant-table-thead > tr > th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.tracking-table-wrapper .ant-table-summary {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background-color: #020617;
+}
+
+.payment-detail-expand {
+  padding: 8px 0;
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 8px;
+}
+.payment-detail-expand .ant-tabs {
+  padding: 0 12px;
+}
+.payment-detail-expand .ant-table-wrapper {
+  margin-top: 8px;
+}
+
+/* Logs TextArea: 日志区滚动条，尽量对齐展开明细表滚动条观感 */
+.logs-textarea {
+  background-color: rgba(2, 6, 23, 0.25);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.8) rgba(30, 41, 59, 0.8);
+}
+
+.logs-textarea::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.logs-textarea::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.6);
+  border-radius: 8px;
+}
+.logs-textarea::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.4);
+  border-radius: 8px;
+}
+
+.payment-detail-expand .ant-table-body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.8) rgba(30, 41, 59, 0.8);
+}
+.payment-detail-expand .ant-table-body::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.payment-detail-expand .ant-table-body::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.6);
+  border-radius: 8px;
+}
+.payment-detail-expand .ant-table-body::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.4);
+  border-radius: 8px;
+}
+

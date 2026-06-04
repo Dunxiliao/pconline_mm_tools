@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "pconline_tools",
+  "version": "2.3.6",
+  "identifier": "dunxi",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Pconline Toolset",
+        "width": 800,
+        "height": 600,
+        "maximized": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/Tracking Callback.xlsx"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDdCRjAzQzdGRUI2RUM2MDMKUldRRHhtN3Jmenp3ZTRUZXRWZW5oVHd1TEhKdFg3ekNYVTdtbTV5NlpscHhuaWtnRmk2UkRHZ0sK",
+      "endpoints": [
+        "https://order.innovberg.com/api/configs/mm_tool/latest_version"
+      ]
+    }
+  }
+}

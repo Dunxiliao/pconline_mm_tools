@@ -1,0 +1,8 @@
+[
+  { "provider": 4, "providerName": "Walmart", "seller": "Walmart" },
+  { "provider": 8, "providerName": "Newegg", "seller": "B0GJ" },
+  { "provider": 8, "providerName": "Newegg Business", "seller": "V70A" },
+  { "provider": 64, "providerName": "Goflow", "seller": "" },
+  { "provider": 2, "providerName": "Shipstation", "seller": "" },
+  { "provider": 32, "providerName": "Shein mmm", "seller": "" }
+]

@@ -1,0 +1,11 @@
+﻿{
+    "version":  "2.3.5",
+    "notes":  "Release 2.3.5",
+    "pub_date":  "2026-05-21T17:20:57Z",
+    "platforms":  {
+                      "windows-x86_64":  {
+                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRRHhtN3Jmenp3ZS9ZUys3ZHlNRWZBdmpwNERmd3ZxNzFFY0IzZXRQRXlGcWJRWnZUN1NQUE1JOHNSazUxMnZxTGY3YzFISWIzUjBCR2V4OGpjbWEwZzdTbkJaeVJiN0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5Mzg0MDU3CWZpbGU6cGNvbmxpbmVfdG9vbHNfMi4zLjVfeDY0X2VuLVVTLm1zaQpZbEpuUGZWbDJvZTlVc2RoUUtCQW1aZjRsTU9wajRWWkQ3dEgxTENqRndnQU9UVjN2UTFkamlKNnhvc2hxNW5RS0x4NXdEbkxsMzdPdTlwR1h0YlpDUT09Cg==",
+                                             "url":  "https://github.com/Dunxiliao/pconline_tools/releases/download/v2.3.5/pconline_tools_2.3.5_x64_en-US.msi"
+                                         }
+                  }
+}
