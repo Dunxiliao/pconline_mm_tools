@@ -1,8 +1,6 @@
 # 仅 macOS 安装包；Windows 仍在本地执行 build-prod.ps1
 # matrix：aarch64（M 芯片）+ x86_64（Intel）各打一个 dmg
-#
-# 打 tag (v*) → 构建并上传到 GitHub Releases（Draft）+ latest.json
-# 手动 Run workflow → 仅 Artifacts 下载（内测）
+# 仅手动触发；产物在 Actions → Artifacts 下载
 
 name: Build macOS (Tauri)
 
@@ -13,12 +11,6 @@ on:
         description: Sign and notarize with Apple certificate (requires APPLE_* secrets)
         type: boolean
         default: false
-  push:
-    tags:
-      - "v*"
-
-permissions:
-  contents: write
 
 env:
   CARGO_INCREMENTAL: 0
@@ -82,7 +74,7 @@ jobs:
           fi
 
       - name: Import Apple Developer certificate
-        if: github.event_name == 'workflow_dispatch' && inputs.apple_sign == true
+        if: inputs.apple_sign == true
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -108,38 +100,16 @@ jobs:
           fi
           echo "Using signing identity: $APPLE_SIGNING_IDENTITY"
 
-      # ── 打 tag：构建 + 上传到 GitHub Releases ──
-      - name: Build and publish to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          APP_ENV: prod
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          projectPath: Pconline.Invoice.Tauri
-          tauriScript: npm run tauri
-          args: --target ${{ matrix.target }}
-          tagName: ${{ github.ref_name }}
-          releaseName: Pconline Tools ${{ github.ref_name }}
-          releaseBody: |
-            macOS：Apple Silicon (aarch64) + Intel (x86_64)。
-            Windows 安装包仍由本地 build-prod.ps1 发布。
-          releaseDraft: true
-          includeUpdaterJson: true
-
-      # ── 手动触发：仅 Artifacts，不上 Release ──
-      - name: Build Tauri (manual, no Apple sign)
-        if: github.event_name == 'workflow_dispatch' && inputs.apple_sign != true
+      - name: Build Tauri (no Apple sign)
+        if: inputs.apple_sign != true
         env:
           APP_ENV: prod
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npm run tauri build -- --target ${{ matrix.target }} --verbose
 
-      - name: Build Tauri (manual, Apple sign + notarize)
-        if: github.event_name == 'workflow_dispatch' && inputs.apple_sign == true
+      - name: Build Tauri (Apple sign + notarize)
+        if: inputs.apple_sign == true
         env:
           APP_ENV: prod
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -149,8 +119,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run tauri build -- --target ${{ matrix.target }} --verbose
 
-      - name: Upload macOS bundle (manual runs only)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload macOS bundle
         uses: actions/upload-artifact@v4
         with:
           name: pconline-tools-macos-${{ matrix.target }}-${{ github.sha }}
