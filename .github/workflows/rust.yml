@@ -81,6 +81,10 @@ jobs:
       - name: Verify prod env file
         run: test -f env/.env.prod
 
+      # tauri build --target 会把 --target 透传给 beforeBuildCommand，vite/esbuild 无法识别 Rust triple
+      - name: Build frontend
+        run: npm run build
+
       - name: Build and upload macOS bundle
         uses: tauri-apps/tauri-action@v0.6.2
         env:
@@ -103,5 +107,5 @@ jobs:
           releaseDraft: true
           prerelease: ${{ contains(github.ref_type == 'tag' && github.ref_name || inputs.release_version, '-rc') }}
           tauriScript: npm
-          args: --target ${{ matrix.target }}
+          args: --target ${{ matrix.target }} --config '{"build":{"beforeBuildCommand":""}}'
           includeUpdaterJson: true
