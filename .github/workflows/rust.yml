@@ -57,10 +57,11 @@ jobs:
         if: matrix.target == 'x86_64-apple-darwin'
         run: |
           arch -x86_64 brew install openssl@3
-          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
-          echo "OPENSSL_INCLUDE_DIR=$(brew --prefix openssl@3)/include" >> "$GITHUB_ENV"
-          echo "OPENSSL_LIB_DIR=$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> "$GITHUB_ENV"
+          OPENSSL_PREFIX="$(arch -x86_64 brew --prefix openssl@3)"
+          echo "OPENSSL_DIR=$OPENSSL_PREFIX" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=$OPENSSL_PREFIX/include" >> "$GITHUB_ENV"
+          echo "OPENSSL_LIB_DIR=$OPENSSL_PREFIX/lib" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$OPENSSL_PREFIX/lib/pkgconfig" >> "$GITHUB_ENV"
 
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
@@ -121,10 +122,27 @@ jobs:
           APP_ENV: prod
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npm run tauri build -- --target ${{ matrix.target }} --verbose
+
+      - name: Verify bundle (signed build)
+        if: inputs.apple_sign == true
+        run: |
+          APP_PATH=$(find src-tauri/target/${{ matrix.target }}/release/bundle/macos -maxdepth 1 -name '*.app' -print -quit)
+          if [ -z "$APP_PATH" ]; then
+            echo "No .app bundle found." >&2
+            exit 1
+          fi
+          echo "Verifying: $APP_PATH"
+          file "$APP_PATH/Contents/MacOS/"*
+          codesign -dv --verbose=4 "$APP_PATH" 2>&1
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          spctl -a -vv --type install "$APP_PATH" 2>&1 || true
 
       - name: Upload macOS bundle
         uses: actions/upload-artifact@v4
