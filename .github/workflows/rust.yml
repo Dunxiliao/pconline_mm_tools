@@ -1,7 +1,8 @@
-# macOS 安装包（aarch64 + x86_64）；Windows 仍在本地执行 build-prod.ps1
-# 使用 tauri-action 构建、签名、公证并上传 GitHub Release
+# 仅 macOS 安装包；Windows 仍在本地执行 build-prod.ps1
+# matrix：aarch64（M 芯片）+ x86_64（Intel）各打一个 dmg
+# 手动触发或推送 v* tag；产物上传 GitHub Release（兼留 Actions Artifacts）
 
-name: Release macOS (Tauri)
+name: Build macOS (Tauri)
 
 on:
   push:
@@ -13,20 +14,16 @@ on:
         description: Release tag (e.g. v2.3.6)
         type: string
         required: true
-
-permissions:
-  contents: write
+      apple_sign:
+        description: Sign and notarize with Apple certificate (requires APPLE_* secrets)
+        type: boolean
+        default: false
 
 env:
   CARGO_INCREMENTAL: 0
-  RUST_BACKTRACE: short
-
-concurrency:
-  group: "${{ github.workflow }} - ${{ github.head_ref || github.ref }}"
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  release-macos:
+  build-macos:
     name: Build macOS ${{ matrix.target }}
     runs-on: macos-latest
     timeout-minutes: 90
@@ -41,39 +38,35 @@ jobs:
         working-directory: Pconline.Invoice.Tauri
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          prefix-key: v1-rust
-          key: rust-shared-stable-macos-${{ matrix.target }}
-          workspaces: Pconline.Invoice.Tauri/src-tauri -> target
-          cache-all-crates: true
-          cache-workspace-crates: true
-
-      - name: Install x86 OpenSSL
-        if: matrix.target == 'x86_64-apple-darwin'
-        run: |
-          arch -x86_64 brew install openssl@3
-          OPENSSL_PREFIX="$(arch -x86_64 brew --prefix openssl@3)"
-          echo "OPENSSL_DIR=$OPENSSL_PREFIX" >> "$GITHUB_ENV"
-          echo "OPENSSL_INCLUDE_DIR=$OPENSSL_PREFIX/include" >> "$GITHUB_ENV"
-          echo "OPENSSL_LIB_DIR=$OPENSSL_PREFIX/lib" >> "$GITHUB_ENV"
-          echo "PKG_CONFIG_PATH=$OPENSSL_PREFIX/lib/pkgconfig" >> "$GITHUB_ENV"
-
-      - name: Install Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: Pconline.Invoice.Tauri/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install x86 OpenSSL
+        if: matrix.target == 'x86_64-apple-darwin'
+        run: |
+          arch -x86_64 brew install openssl@3
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+          echo "OPENSSL_INCLUDE_DIR=$(brew --prefix openssl@3)/include" >> "$GITHUB_ENV"
+          echo "OPENSSL_LIB_DIR=$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl@3)/lib/pkgconfig" >> "$GITHUB_ENV"
+
+      - name: Cache Rust dependencies
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: Pconline.Invoice.Tauri/src-tauri
+          shared-key: macos-${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: npm ci
@@ -81,31 +74,94 @@ jobs:
       - name: Verify prod env file
         run: test -f env/.env.prod
 
-      # tauri build --target 会把 --target 透传给 beforeBuildCommand，vite/esbuild 无法识别 Rust triple
-      - name: Build frontend
-        run: npm run build
+      - name: Check updater signing secrets
+        run: |
+          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY 未配置，将不会生成 .sig（在线更新签名）"
+          fi
 
-      - name: Build and upload macOS bundle
-        uses: tauri-apps/tauri-action@v0.6.2
+      - name: Import Apple Developer certificate
+        if: inputs.apple_sign == true
         env:
-          APP_ENV: prod
-          NODE_OPTIONS: --max_old_space_size=4096
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
+          security set-keychain-settings -t 3600 -u build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
+          if [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> "$GITHUB_ENV"
+          else
+            CERT_ID=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.+)"$/\1/')
+            if [ -z "$CERT_ID" ]; then
+              echo "No Developer ID Application certificate found in keychain." >&2
+              security find-identity -v -p codesigning build.keychain || true
+              exit 1
+            fi
+            echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
+          fi
+          echo "Using signing identity: $APPLE_SIGNING_IDENTITY"
+
+      - name: Build Tauri (no Apple sign)
+        if: inputs.apple_sign != true
+        env:
+          APP_ENV: prod
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npm run tauri build -- --target ${{ matrix.target }} --verbose
+
+      - name: Build Tauri (Apple sign + notarize)
+        if: inputs.apple_sign == true
+        env:
+          APP_ENV: prod
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri build -- --target ${{ matrix.target }} --verbose
+
+      - name: Upload macOS bundle
+        uses: actions/upload-artifact@v4
         with:
-          projectPath: Pconline.Invoice.Tauri
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_version }}
-          releaseName: Pconline Tools ${{ github.ref_type == 'tag' && github.ref_name || inputs.release_version }}
-          releaseBody: macOS release build.
-          releaseDraft: true
-          prerelease: ${{ contains(github.ref_type == 'tag' && github.ref_name || inputs.release_version, '-rc') }}
-          tauriScript: npm
-          args: --target ${{ matrix.target }} --config '{"build":{"beforeBuildCommand":""}}'
-          includeUpdaterJson: true
+          name: pconline-tools-macos-${{ matrix.target }}-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/**
+            Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos/**
+            Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+
+  release:
+    name: Publish GitHub Release
+    needs: build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          files: artifacts/**/*
+          generate_release_notes: true
