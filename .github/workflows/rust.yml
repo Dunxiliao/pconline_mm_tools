@@ -1,12 +1,19 @@
 # 仅 macOS 安装包；Windows 仍在本地执行 build-prod.ps1
 # matrix：aarch64（M 芯片）+ x86_64（Intel）各打一个 dmg
-# 仅手动触发；产物在 Actions → Artifacts 下载
+# 手动触发或推送 v* tag；产物上传 GitHub Release（兼留 Actions Artifacts）
 
 name: Build macOS (Tauri)
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
+      release_version:
+        description: Release tag (e.g. v2.3.6)
+        type: string
+        required: true
       apple_sign:
         description: Sign and notarize with Apple certificate (requires APPLE_* secrets)
         type: boolean
@@ -128,3 +135,33 @@ jobs:
             Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/**
             Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos/**
             Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
+
+  release:
+    name: Publish GitHub Release
+    needs: build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Resolve release tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          target_commitish: ${{ github.sha }}
+          files: artifacts/**/*
+          generate_release_notes: true
