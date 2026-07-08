@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::amazon;
 use crate::fedex;
+use crate::ontrac;
 use crate::temu;
 use crate::ups;
 
@@ -28,6 +29,7 @@ pub enum Carrier {
     Temu(temu::TemuStrategy),
     Ups(ups::UpsStrategy),
     Fedex(fedex::FedexStrategy),
+    OnTrac(ontrac::OnTracStrategy),
 }
 
 impl Carrier {
@@ -37,6 +39,7 @@ impl Carrier {
             "Temu" => Some(Self::Temu(temu::TemuStrategy::new())),
             "UPS" => Some(Self::Ups(ups::UpsStrategy::new())),
             "Fedex" => Some(Self::Fedex(fedex::FedexStrategy::new())),
+            "OnTrac" => Some(Self::OnTrac(ontrac::OnTracStrategy::new())),
             _ => None,
         }
     }
@@ -57,6 +60,7 @@ pub async fn invoice_process_files(
             Carrier::Temu(s) => s.get_file_info(&path)?.0,
             Carrier::Ups(s) => s.get_file_info(&path)?.0,
             Carrier::Fedex(s) => s.get_file_info(&path)?.0,
+            Carrier::OnTrac(s) => s.get_file_info(&path)?.0,
         };
         result.push(file_info);
     }
@@ -151,7 +155,34 @@ pub async fn invoice_check_files(
                     }
                 }
             }
-            _ => {}
+            "OnTrac" => {
+                let (_, parsed) = match ontrac::OnTracStrategy::new().get_file_info(path) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        f.status = format!("Error: {}", e);
+                        out.push(f);
+                        continue;
+                    }
+                };
+                let nums: std::collections::HashSet<String> =
+                    parsed.iter().map(|i| i.invoice_number.clone()).collect();
+                let invoice_number = nums.into_iter().collect::<Vec<_>>().join("\n");
+                if invoice_number.is_empty() {
+                    f.status = "Pass".to_string();
+                } else {
+                    match crate::db::check_ontrac_invoice_exists(&invoice_number).await {
+                        Ok(existing) => {
+                            f.status = if existing.is_empty() {
+                                "Pass".to_string()
+                            } else {
+                                format!("Exists ({})", existing.join(", "))
+                            };
+                        }
+                        Err(e) => f.status = format!("Check error: {}", e),
+                    }
+                }
+            }
+            _ => f.status = format!("Unsupported carrier: {}", f.carrier),
         }
         out.push(f);
     }
@@ -246,7 +277,25 @@ pub async fn invoice_upload_files(
                     }
                 }
             }
-            _ => {}
+            "OnTrac" => {
+                let (_, parsed) = match ontrac::OnTracStrategy::new().get_file_info(path) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        f.status = format!("Error: {}", e);
+                        out.push(f);
+                        continue;
+                    }
+                };
+                if parsed.is_empty() {
+                    f.status = "Failed: no items".to_string();
+                } else {
+                    match crate::db::insert_ontrac_invoice(&parsed).await {
+                        Ok(()) => f.status = "Successful".to_string(),
+                        Err(e) => f.status = format!("Failed: {}", e),
+                    }
+                }
+            }
+            _ => f.status = format!("Unsupported carrier: {}", f.carrier),
         }
         out.push(f);
     }

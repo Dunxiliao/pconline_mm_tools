@@ -79,6 +79,23 @@ pub async fn check_fedex_invoice_exists(invoice_numbers: &str) -> Result<Vec<Str
     Ok(rows)
 }
 
+/// 查询 OnTrac 已存在的发票号（invoice_number）
+pub async fn check_ontrac_invoice_exists(invoice_numbers: &str) -> Result<Vec<String>, String> {
+    let pool = get_pool()?;
+    let numbers = parse_invoice_numbers(invoice_numbers);
+    if numbers.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT DISTINCT invoice_number FROM shipping_invoice_ontrac WHERE invoice_number = ANY($1)",
+    )
+    .bind(&numbers)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(rows)
+}
+
 /// 插入 Amazon 发票：先插 metadata 再插 items（同一事务）
 pub async fn insert_amazon_invoice(
     metadata: &crate::amazon::AmazonInvoiceMetadata,
@@ -251,6 +268,121 @@ pub async fn insert_temu_invoice(items: &[crate::temu::TemuInvoice]) -> Result<(
         .execute(pool)
         .await
         .map_err(|e| format!("Temu 插入失败: {}", e))?;
+    }
+    Ok(())
+}
+
+/// 插入 OnTrac 发票（无校验，直接插 shipping_invoice_ontrac）
+pub async fn insert_ontrac_invoice(items: &[crate::ontrac::OnTracInvoice]) -> Result<(), String> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let pool = get_pool()?;
+    let fallback_now = Utc::now().naive_utc();
+    for item in items {
+        let upload_invoice_file_date = chrono::NaiveDateTime::parse_from_str(
+            &item.upload_invoice_file_date,
+            "%Y-%m-%d %H:%M:%S",
+        )
+        .unwrap_or(fallback_now);
+        sqlx::query(
+            r#"
+            INSERT INTO shipping_invoice_ontrac
+            (invoice_number, billing_date, ontrac_destination_facility_code, reference1, reference2,
+             customer_order_number, third_party_account_number, tracking_number, shipper_company_name,
+             shipper_street, shipper_city, shipper_state, shipper_country, shipper_postalcode,
+             destination_contact, destination_street, destination_city, destination_state,
+             destination_country, destination_postalcode, service_code, zone, return_to_sender,
+             residential, irregular_category, proof_of_delivery_name, proof_of_delivery_datetime,
+             first_scan_datetime, customer_account, injection_postalcode, weight, length, width, height,
+             billed_weight, billed_length, billed_width, billed_height, dim_factor, weight_source,
+             total_charges, service_charges, address_correction_surcharge, delivery_intervention_required,
+             extra_piece_surcharge, residential_surcharge, delivery_area_surcharge, extended_area_surcharge,
+             additional_handling_surcharge, large_package_surcharge, over_maximum_limits_surcharge,
+             signature_required, adult_signature_required, relabel_surcharge, weekend_surcharge,
+             demand_surcharge, demand_additional_handling_surcharge, demand_large_package_surcharge,
+             demand_over_maximum_limits_surcharge, on_call_pickup, shipping_charge_correction_audit_fee,
+             volume_rebate, volume_rebate_2, volume_rebate_3, missing_pld, other_adjustments,
+             miscellaneous_charges, fuel_surcharge, upload_invoice_file_name, upload_invoice_file_date)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+                    $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37,
+                    $38, $39, $40, $41, $42, $43, $44, $45, $46, $47, $48, $49, $50, $51, $52, $53, $54, $55,
+                    $56, $57, $58, $59, $60, $61, $62, $63, $64, $65, $66, $67, $68, $69, $70)
+            "#,
+        )
+        .bind(&item.invoice_number)
+        .bind(&item.billing_date)
+        .bind(&item.ontrac_destination_facility_code)
+        .bind(&item.reference1)
+        .bind(&item.reference2)
+        .bind(&item.customer_order_number)
+        .bind(&item.third_party_account_number)
+        .bind(&item.tracking_number)
+        .bind(&item.shipper_company_name)
+        .bind(&item.shipper_street)
+        .bind(&item.shipper_city)
+        .bind(&item.shipper_state)
+        .bind(&item.shipper_country)
+        .bind(&item.shipper_postalcode)
+        .bind(&item.destination_contact)
+        .bind(&item.destination_street)
+        .bind(&item.destination_city)
+        .bind(&item.destination_state)
+        .bind(&item.destination_country)
+        .bind(&item.destination_postalcode)
+        .bind(&item.service_code)
+        .bind(&item.zone)
+        .bind(&item.return_to_sender)
+        .bind(&item.residential)
+        .bind(&item.irregular_category)
+        .bind(&item.proof_of_delivery_name)
+        .bind(&item.proof_of_delivery_datetime)
+        .bind(&item.first_scan_datetime)
+        .bind(&item.customer_account)
+        .bind(&item.injection_postalcode)
+        .bind(&item.weight)
+        .bind(&item.length)
+        .bind(&item.width)
+        .bind(&item.height)
+        .bind(&item.billed_weight)
+        .bind(&item.billed_length)
+        .bind(&item.billed_width)
+        .bind(&item.billed_height)
+        .bind(&item.dim_factor)
+        .bind(&item.weight_source)
+        .bind(&item.total_charges)
+        .bind(&item.service_charges)
+        .bind(&item.address_correction_surcharge)
+        .bind(&item.delivery_intervention_required)
+        .bind(&item.extra_piece_surcharge)
+        .bind(&item.residential_surcharge)
+        .bind(&item.delivery_area_surcharge)
+        .bind(&item.extended_area_surcharge)
+        .bind(&item.additional_handling_surcharge)
+        .bind(&item.large_package_surcharge)
+        .bind(&item.over_maximum_limits_surcharge)
+        .bind(&item.signature_required)
+        .bind(&item.adult_signature_required)
+        .bind(&item.relabel_surcharge)
+        .bind(&item.weekend_surcharge)
+        .bind(&item.demand_surcharge)
+        .bind(&item.demand_additional_handling_surcharge)
+        .bind(&item.demand_large_package_surcharge)
+        .bind(&item.demand_over_maximum_limits_surcharge)
+        .bind(&item.on_call_pickup)
+        .bind(&item.shipping_charge_correction_audit_fee)
+        .bind(&item.volume_rebate)
+        .bind(&item.volume_rebate_2)
+        .bind(&item.volume_rebate_3)
+        .bind(&item.missing_pld)
+        .bind(&item.other_adjustments)
+        .bind(&item.miscellaneous_charges)
+        .bind(&item.fuel_surcharge)
+        .bind(&item.upload_invoice_file_name)
+        .bind(upload_invoice_file_date)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("OnTrac 插入失败: {}", e))?;
     }
     Ok(())
 }

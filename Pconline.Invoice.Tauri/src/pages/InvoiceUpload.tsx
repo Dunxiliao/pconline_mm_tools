@@ -12,7 +12,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import { appendTimedLog } from "../utils/logging";
 
-type Carrier = "Amazon" | "Temu" | "UPS" | "Fedex";
+type Carrier = "Amazon" | "Temu" | "UPS" | "Fedex" | "OnTrac";
 
 interface FileInfoDto {
   fileFullName: string;
@@ -249,6 +249,7 @@ export function InvoiceUpload() {
     { value: "Fedex", label: "Fedex" },
     { value: "Temu", label: "Temu" },
     { value: "UPS", label: "UPS" },
+    { value: "OnTrac", label: "OnTrac" },
   ];
 
   const canOperate = files.length > 0;

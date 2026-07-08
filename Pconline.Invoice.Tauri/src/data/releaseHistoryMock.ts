@@ -11,6 +11,13 @@ export interface ReleaseHistoryItem {
 
 export const MOCK_RELEASE_HISTORY: ReleaseHistoryItem[] = [
   {
+    version: "2.3.7",
+    pubDate: "2026-06-24",
+    notes: [
+      "Shipping Invoice Report上传 V1.3 支持 OnTrac Invoice"
+    ],
+  },
+  {
     version: "2.3.6",
     pubDate: "2026-06-04",
     notes: [
