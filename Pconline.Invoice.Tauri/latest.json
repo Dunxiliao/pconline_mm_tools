@@ -1,11 +1,11 @@
 ﻿{
-    "version":  "2.3.5",
-    "notes":  "Release 2.3.5",
-    "pub_date":  "2026-05-21T17:20:57Z",
+    "version":  "2.3.8",
+    "notes":  "增加ViteFedEx物流Tracking Number回传",
+    "pub_date":  "2026-09-01T13:16:43Z",
     "platforms":  {
                       "windows-x86_64":  {
-                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRRHhtN3Jmenp3ZS9ZUys3ZHlNRWZBdmpwNERmd3ZxNzFFY0IzZXRQRXlGcWJRWnZUN1NQUE1JOHNSazUxMnZxTGY3YzFISWIzUjBCR2V4OGpjbWEwZzdTbkJaeVJiN0FZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzc5Mzg0MDU3CWZpbGU6cGNvbmxpbmVfdG9vbHNfMi4zLjVfeDY0X2VuLVVTLm1zaQpZbEpuUGZWbDJvZTlVc2RoUUtCQW1aZjRsTU9wajRWWkQ3dEgxTENqRndnQU9UVjN2UTFkamlKNnhvc2hxNW5RS0x4NXdEbkxsMzdPdTlwR1h0YlpDUT09Cg==",
-                                             "url":  "https://github.com/Dunxiliao/pconline_tools/releases/download/v2.3.5/pconline_tools_2.3.5_x64_en-US.msi"
+                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRRHhtN3Jmenp3ZTZtcU9sb0N1Wk9icEh5eTcrUE9WVFZmS09STENQNHBMMkJ1THY1MVJBZ1VNL1cxOUdoZS9SYUljMVhHYjN1Y21XUU5tSk9YckhIYlRoNXQ2ZW1abmdZPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MjY4NjAzCWZpbGU6cGNvbmxpbmVfdG9vbHNfMi4zLjhfeDY0X2VuLVVTLm1zaQp5d1pibWVjTUZYb29udFphcW5kRnVLeE42SzI0Y052MlpTVFoweDdrVGJ4VEpneS9ReWVuZWNQbnRzd1pVNENmTGQzZkxoSnhsaXNsUjFUTmNMcmdCZz09Cg==",
+                                             "url":  "https://github.com/Dunxiliao/pconline_tools/releases/download/v2.3.8/pconline_tools_2.3.8_x64_en-US.msi"
                                          }
                   }
 }

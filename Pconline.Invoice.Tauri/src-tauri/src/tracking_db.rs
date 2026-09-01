@@ -108,36 +108,13 @@ struct OrderTrackingRow {
     qty: Option<i32>,
 }
 
-/// EfShip: 根据订单号列表拉取出运信息（与 C# EfShipRepository.GetOrdersAsync 一致）
+/// EfShip: 根据订单号列表拉取出运信息（存储过程 get_shipment_details）
 pub async fn efship_get_orders(order_numbers: &[String], provider: i32) -> Result<Vec<TrackingOrderDto>, String> {
     if order_numbers.is_empty() {
         return Ok(Vec::new());
     }
     let pool = get_efship_pool()?;
-    let sql = r#"
-        SELECT
-            s."OrderCode" AS order_number,
-            p."TrackingNumber" AS tracking_number,
-            COALESCE(s."Services"->>0, '') AS service_code,
-            CASE c."Type"
-                WHEN 0 THEN 'UPS'
-                WHEN 1 THEN 'USPS'
-                WHEN 2 THEN 'AmazonShipping'
-                WHEN 3 THEN 'FedEx'
-                WHEN 4 THEN 'OnTrac'
-                WHEN 99 THEN 'Shipstation'
-                ELSE 'Unknown'
-            END AS carrier_name,
-            pr."SKU" AS sku,
-            pr."Quantity" AS qty
-        FROM "EFS.Shipments" AS s
-        LEFT JOIN "EFS.Carriers" AS c ON c."Id" = s."CarrierId"
-        LEFT JOIN "EFS.ShipmentParcels" AS sp ON sp."ShipmentId" = s."Id"
-        LEFT JOIN "EFS.Parcels" AS p ON p."Id" = sp."ParcelId"
-        LEFT JOIN "EFS.ParcelItems" AS pi ON pi."ParcelId" = p."Id"
-        LEFT JOIN "EFS.Products" AS pr ON pr."Id" = pi."ProductId"
-        WHERE s."Status" = 1 AND s."OrderCode" = ANY($1)
-    "#;
+    let sql = "SELECT * FROM get_shipment_details($1)";
     let rows = sqlx::query_as::<_, OrderTrackingRow>(sql)
         .bind(order_numbers)
         .fetch_all(pool)

@@ -11,6 +11,13 @@ export interface ReleaseHistoryItem {
 
 export const MOCK_RELEASE_HISTORY: ReleaseHistoryItem[] = [
   {
+    version: "2.3.8",
+    pubDate: "2026-09-01",
+    notes: [
+      "增加ViteFedEx物流Tracking Number回传"
+    ],
+  },
+  {
     version: "2.3.7",
     pubDate: "2026-06-24",
     notes: [
