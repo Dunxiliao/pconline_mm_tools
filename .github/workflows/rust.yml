@@ -1,6 +1,22 @@
-# 仅 macOS 安装包；Windows 仍在本地执行 build-prod.ps1
-# matrix：aarch64（M 芯片）+ x86_64（Intel）各打一个 dmg
-# 手动触发或推送 v* tag；产物上传 GitHub Release（兼留 Actions Artifacts）
+# 仅构建 macOS 安装包
+# Windows 仍在本地执行 build-prod.ps1
+#
+# macOS:
+#   - Apple Silicon: aarch64-apple-darwin
+#   - Intel:         x86_64-apple-darwin
+#
+# 触发方式:
+#   1. push v* tag
+#      - 自动执行 Apple 签名 + notarization
+#      - 自动创建/更新 GitHub Release
+#
+#   2. workflow_dispatch
+#      - 手动指定 Release Tag
+#      - 可选择是否执行 Apple 签名 + notarization
+#
+# 产物:
+#   - GitHub Actions Artifacts
+#   - GitHub Release
 
 name: Build macOS (Tauri)
 
@@ -8,14 +24,16 @@ on:
   push:
     tags:
       - "v*"
+
   workflow_dispatch:
     inputs:
       release_version:
         description: Release tag (e.g. v2.3.6)
         type: string
         required: true
+
       apple_sign:
-        description: Sign and notarize with Apple certificate (requires APPLE_* secrets)
+        description: Sign and notarize with Apple certificate
         type: boolean
         default: false
 
@@ -23,24 +41,89 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  # ============================================================
+  # Build macOS
+  # ============================================================
   build-macos:
     name: Build macOS ${{ matrix.target }}
-    runs-on: macos-latest
+
+    runs-on: ${{ matrix.os }}
+
     timeout-minutes: 90
+
     strategy:
       fail-fast: false
+
       matrix:
         include:
+          # Apple Silicon
           - target: aarch64-apple-darwin
+            os: macos-15
+            expected_arch: arm64
+
+          # Intel
           - target: x86_64-apple-darwin
+            os: macos-15-intel
+            expected_arch: x86_64
+
     defaults:
       run:
+        shell: bash
         working-directory: Pconline.Invoice.Tauri
 
     steps:
+      # --------------------------------------------------------
+      # Checkout
+      # --------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
+      # --------------------------------------------------------
+      # Verify runner
+      # --------------------------------------------------------
+      - name: Verify build environment
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "macOS"
+          echo "========================================"
+          sw_vers
+
+          echo
+          echo "========================================"
+          echo "Architecture"
+          echo "========================================"
+          uname -m
+
+          echo
+          echo "Expected architecture:"
+          echo "${{ matrix.expected_arch }}"
+
+          echo
+          echo "Rust target:"
+          echo "${{ matrix.target }}"
+
+          echo
+          echo "========================================"
+          echo "Homebrew"
+          echo "========================================"
+          which brew
+          brew --version
+          brew --prefix
+
+          ACTUAL_ARCH="$(uname -m)"
+
+          if [ "$ACTUAL_ARCH" != "${{ matrix.expected_arch }}" ]; then
+            echo "::error::Unexpected runner architecture."
+            echo "::error::Expected: ${{ matrix.expected_arch }}"
+            echo "::error::Actual:   $ACTUAL_ARCH"
+            exit 1
+          fi
+
+      # --------------------------------------------------------
+      # Node.js
+      # --------------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -48,130 +131,440 @@ jobs:
           cache: npm
           cache-dependency-path: Pconline.Invoice.Tauri/package-lock.json
 
+      # --------------------------------------------------------
+      # Rust
+      # --------------------------------------------------------
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
 
-      # x86_64 在 ARM runner 上交叉编译：必须用 /usr/local 下的 Intel Homebrew，不能用 arch -x86_64 brew（会误操作 /opt/homebrew）
+      # --------------------------------------------------------
+      # OpenSSL
+      #
+      # macos-15:
+      #   /opt/homebrew
+      #
+      # macos-15-intel:
+      #   /usr/local
+      #
+      # 不再进行 Rosetta / Intel Homebrew 交叉安装
+      # --------------------------------------------------------
       - name: Install OpenSSL
         run: |
-          if [ "${{ matrix.target }}" = "x86_64-apple-darwin" ]; then
-            if [ ! -x /usr/local/bin/brew ]; then
-              echo "Installing Intel Homebrew to /usr/local..."
-              NONINTERACTIVE=1 arch -x86_64 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-            fi
-            arch -x86_64 /usr/local/bin/brew install openssl@3
-            OPENSSL_PREFIX="$(arch -x86_64 /usr/local/bin/brew --prefix openssl@3)"
-          else
-            brew install openssl@3
-            OPENSSL_PREFIX="$(brew --prefix openssl@3)"
-          fi
+          set -euo pipefail
+
+          brew install openssl@3
+
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+
           echo "OPENSSL_DIR=$OPENSSL_PREFIX" >> "$GITHUB_ENV"
           echo "OPENSSL_INCLUDE_DIR=$OPENSSL_PREFIX/include" >> "$GITHUB_ENV"
           echo "OPENSSL_LIB_DIR=$OPENSSL_PREFIX/lib" >> "$GITHUB_ENV"
           echo "PKG_CONFIG_PATH=$OPENSSL_PREFIX/lib/pkgconfig" >> "$GITHUB_ENV"
 
+          echo
+          echo "OpenSSL prefix:"
+          echo "$OPENSSL_PREFIX"
+
+          echo
+          echo "OpenSSL version:"
+          "$OPENSSL_PREFIX/bin/openssl" version
+
+          echo
+          echo "OpenSSL architecture:"
+          file "$OPENSSL_PREFIX/bin/openssl"
+
+      # --------------------------------------------------------
+      # Rust cache
+      # --------------------------------------------------------
       - name: Cache Rust dependencies
         uses: swatinem/rust-cache@v2
         with:
           workspaces: Pconline.Invoice.Tauri/src-tauri
           shared-key: macos-${{ matrix.target }}
 
+      # --------------------------------------------------------
+      # Frontend dependencies
+      # --------------------------------------------------------
       - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Verify prod env file
-        run: test -f env/.env.prod
-
-      - name: Check updater signing secrets
         run: |
-          if [ -z "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
-            echo "::warning::TAURI_SIGNING_PRIVATE_KEY 未配置，将不会生成 .sig（在线更新签名）"
+          set -euo pipefail
+          npm ci
+
+      # --------------------------------------------------------
+      # Environment
+      # --------------------------------------------------------
+      - name: Verify prod env file
+        run: |
+          set -euo pipefail
+
+          if [ ! -f env/.env.prod ]; then
+            echo "::error::env/.env.prod not found"
+            exit 1
           fi
 
-      - name: Import Apple Developer certificate
-        if: inputs.apple_sign == true
+          echo "env/.env.prod found"
+
+      # --------------------------------------------------------
+      # Tauri updater signing key
+      #
+      # 这是 Tauri updater 自己的签名，
+      # 与 Apple Developer ID 签名不是同一个东西。
+      # --------------------------------------------------------
+      - name: Check updater signing secrets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY 未配置，将不会生成 Tauri updater .sig 文件"
+          else
+            echo "Tauri updater signing key configured"
+          fi
+
+      # --------------------------------------------------------
+      # Determine Apple signing mode
+      #
+      # v* tag:
+      #   强制正式签名
+      #
+      # workflow_dispatch:
+      #   根据 apple_sign 输入决定
+      # --------------------------------------------------------
+      - name: Resolve Apple signing mode
+        id: signing
+        working-directory: .
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Apple signing enabled because build was triggered by tag."
+          elif [ "${{ inputs.apple_sign }}" = "true" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "Apple signing enabled by workflow_dispatch input."
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "Apple signing disabled."
+          fi
+
+      # --------------------------------------------------------
+      # Validate Apple secrets
+      # --------------------------------------------------------
+      - name: Validate Apple signing secrets
+        if: steps.signing.outputs.enabled == 'true'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-        run: |
-          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
-          security create-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" build.keychain
-          security set-keychain-settings -t 3600 -u build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/productsign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" build.keychain
-          if [ -n "${{ secrets.APPLE_SIGNING_IDENTITY }}" ]; then
-            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}" >> "$GITHUB_ENV"
-          else
-            CERT_ID=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | sed -E 's/.*"(.+)"$/\1/')
-            if [ -z "$CERT_ID" ]; then
-              echo "No Developer ID Application certificate found in keychain." >&2
-              security find-identity -v -p codesigning build.keychain || true
-              exit 1
-            fi
-            echo "APPLE_SIGNING_IDENTITY=$CERT_ID" >> "$GITHUB_ENV"
-          fi
-          echo "Using signing identity: $APPLE_SIGNING_IDENTITY"
-
-      - name: Build Tauri (no Apple sign)
-        if: inputs.apple_sign != true
-        env:
-          APP_ENV: prod
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npm run tauri build -- --target ${{ matrix.target }} --verbose
-
-      - name: Build Tauri (Apple sign + notarize)
-        if: inputs.apple_sign == true
-        env:
-          APP_ENV: prod
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run tauri build -- --target ${{ matrix.target }} --verbose
+        run: |
+          set -euo pipefail
 
+          MISSING=0
+
+          check_secret() {
+            local name="$1"
+            local value="$2"
+
+            if [ -z "$value" ]; then
+              echo "::error::$name is not configured"
+              MISSING=1
+            fi
+          }
+
+          check_secret "APPLE_CERTIFICATE" "$APPLE_CERTIFICATE"
+          check_secret "APPLE_CERTIFICATE_PASSWORD" "$APPLE_CERTIFICATE_PASSWORD"
+          check_secret "KEYCHAIN_PASSWORD" "$KEYCHAIN_PASSWORD"
+          check_secret "APPLE_ID" "$APPLE_ID"
+          check_secret "APPLE_PASSWORD" "$APPLE_PASSWORD"
+          check_secret "APPLE_TEAM_ID" "$APPLE_TEAM_ID"
+
+          if [ "$MISSING" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "Apple signing/notarization secrets are configured."
+
+      # --------------------------------------------------------
+      # Import Apple Developer certificate
+      # --------------------------------------------------------
+      - name: Import Apple Developer certificate
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          CONFIGURED_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          CERTIFICATE_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
+
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$CERTIFICATE_PATH"
+
+          security create-keychain \
+            -p "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security set-keychain-settings \
+            -lut 21600 \
+            "$KEYCHAIN_PATH"
+
+          security unlock-keychain \
+            -p "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          security list-keychains \
+            -d user \
+            -s "$KEYCHAIN_PATH"
+
+          security default-keychain \
+            -d user \
+            -s "$KEYCHAIN_PATH"
+
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/productsign
+
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          echo
+          echo "Available code signing identities:"
+          security find-identity \
+            -v \
+            -p codesigning \
+            "$KEYCHAIN_PATH"
+
+          if [ -n "$CONFIGURED_SIGNING_IDENTITY" ]; then
+            SIGNING_IDENTITY="$CONFIGURED_SIGNING_IDENTITY"
+          else
+            SIGNING_IDENTITY="$(
+              security find-identity \
+                -v \
+                -p codesigning \
+                "$KEYCHAIN_PATH" \
+              | grep "Developer ID Application" \
+              | head -1 \
+              | sed -E 's/.*"(.+)"$/\1/'
+            )"
+          fi
+
+          if [ -z "$SIGNING_IDENTITY" ]; then
+            echo "::error::No Developer ID Application certificate found."
+            exit 1
+          fi
+
+          echo "APPLE_SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+          echo "BUILD_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
+          echo
+          echo "Using signing identity:"
+          echo "$SIGNING_IDENTITY"
+
+      # --------------------------------------------------------
+      # Build without Apple signing
+      # --------------------------------------------------------
+      - name: Build Tauri
+        if: steps.signing.outputs.enabled != 'true'
+        env:
+          APP_ENV: prod
+
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+        run: |
+          set -euo pipefail
+
+          npm run tauri build -- \
+            --target "${{ matrix.target }}" \
+            --verbose
+
+      # --------------------------------------------------------
+      # Build + Apple sign + notarization
+      # --------------------------------------------------------
+      - name: Build Tauri (Apple sign + notarize)
+        if: steps.signing.outputs.enabled == 'true'
+        env:
+          APP_ENV: prod
+
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+        run: |
+          set -euo pipefail
+
+          echo "Building:"
+          echo "  target: ${{ matrix.target }}"
+          echo "  arch:   $(uname -m)"
+          echo "  sign:   enabled"
+
+          npm run tauri build -- \
+            --target "${{ matrix.target }}" \
+            --verbose
+
+      # --------------------------------------------------------
+      # Verify generated DMG
+      # --------------------------------------------------------
+      - name: Verify macOS bundle
+        run: |
+          set -euo pipefail
+
+          BUNDLE_DIR="src-tauri/target/${{ matrix.target }}/release/bundle"
+
+          echo "Bundle directory:"
+          echo "$BUNDLE_DIR"
+
+          if [ ! -d "$BUNDLE_DIR" ]; then
+            echo "::error::Bundle directory not found"
+            exit 1
+          fi
+
+          echo
+          echo "Generated files:"
+          find "$BUNDLE_DIR" \
+            -type f \
+            -maxdepth 4 \
+            -print
+
+          DMG_COUNT="$(
+            find "$BUNDLE_DIR/dmg" \
+              -type f \
+              -name "*.dmg" \
+              2>/dev/null \
+            | wc -l \
+            | tr -d ' '
+          )"
+
+          if [ "$DMG_COUNT" -eq 0 ]; then
+            echo "::error::No DMG generated for ${{ matrix.target }}"
+            exit 1
+          fi
+
+      # --------------------------------------------------------
+      # Upload Actions artifact
+      # --------------------------------------------------------
       - name: Upload macOS bundle
         uses: actions/upload-artifact@v4
         with:
           name: pconline-tools-macos-${{ matrix.target }}-${{ github.sha }}
+
           if-no-files-found: error
+
+          retention-days: 30
+
           path: |
             Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/**
             Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/macos/**
             Pconline.Invoice.Tauri/src-tauri/target/${{ matrix.target }}/release/bundle/**/*.sig
 
-  release:
-    name: Publish GitHub Release
-    needs: build-macos
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Resolve release tag
-        id: tag
+      # --------------------------------------------------------
+      # Cleanup keychain
+      # --------------------------------------------------------
+      - name: Cleanup Apple signing keychain
+        if: always() && steps.signing.outputs.enabled == 'true'
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "name=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${{ inputs.release_version }}" >> "$GITHUB_OUTPUT"
+          if [ -n "${BUILD_KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$BUILD_KEYCHAIN_PATH" || true
           fi
 
+          rm -f "$RUNNER_TEMP/certificate.p12" || true
+
+
+  # ============================================================
+  # GitHub Release
+  # ============================================================
+  release:
+    name: Publish GitHub Release
+
+    needs:
+      - build-macos
+
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      # --------------------------------------------------------
+      # Resolve release tag
+      # --------------------------------------------------------
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            RELEASE_TAG="${{ github.ref_name }}"
+          else
+            RELEASE_TAG="${{ inputs.release_version }}"
+          fi
+
+          if [ -z "$RELEASE_TAG" ]; then
+            echo "::error::Release tag is empty"
+            exit 1
+          fi
+
+          if [[ "$RELEASE_TAG" != v* ]]; then
+            echo "::error::Release tag must start with 'v'"
+            exit 1
+          fi
+
+          echo "name=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "Release tag:"
+          echo "$RELEASE_TAG"
+
+      # --------------------------------------------------------
+      # Download ARM + Intel artifacts
+      # --------------------------------------------------------
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
+      # --------------------------------------------------------
+      # Show release files
+      # --------------------------------------------------------
+      - name: List release files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Files to publish:"
+          find artifacts \
+            -type f \
+            -print
+
+      # --------------------------------------------------------
+      # Publish GitHub Release
+      # --------------------------------------------------------
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.name }}
+
           target_commitish: ${{ github.sha }}
-          files: artifacts/**/*
+
           generate_release_notes: true
+
+          fail_on_unmatched_files: true
+
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.sig
