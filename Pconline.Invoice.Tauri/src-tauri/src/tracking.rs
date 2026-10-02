@@ -38,6 +38,8 @@ pub struct PlatformInfo {
     pub provider: i32,
     pub provider_name: String,
     pub seller: String,
+    #[serde(default)]
+    pub account_code: Option<String>,
 }
 
 /// 从环境变量或内嵌配置读取 ETAILFLOW_MERCHANT_CODE，未设置时默认 pconline（页面不展示，仅上传时使用）
@@ -69,31 +71,37 @@ fn load_platform_list() -> Vec<PlatformInfo> {
             provider: 4,
             provider_name: "Walmart".to_string(),
             seller: "Walmart".to_string(),
+            account_code: None,
         },
         PlatformInfo {
             provider: 8,
             provider_name: "Newegg".to_string(),
             seller: "B0GJ".to_string(),
+            account_code: None,
         },
         PlatformInfo {
             provider: 8,
             provider_name: "Newegg Business".to_string(),
             seller: "V70A".to_string(),
+            account_code: None,
         },
         PlatformInfo {
             provider: 64,
             provider_name: "Goflow".to_string(),
             seller: "".to_string(),
+            account_code: None,
         },
         PlatformInfo {
             provider: 2,
             provider_name: "Shipstation".to_string(),
             seller: "".to_string(),
+            account_code: None,
         },
         PlatformInfo {
             provider: 32,
             provider_name: "Shein mmm".to_string(),
             seller: "".to_string(),
+            account_code: None,
         },
     ])
 }
@@ -341,6 +349,7 @@ pub async fn tracking_post_etailflow(
     merchant_code: String,
     service_provider: i32,
     seller: String,
+    account_code: Option<String>,
     orders: Vec<TrackingOrderDto>,
     replace_tracking: bool,
 ) -> Result<TrackingPostResult, String> {
@@ -356,12 +365,16 @@ pub async fn tracking_post_etailflow(
             data: Vec::new(),
         });
     }
+    let account_code = account_code
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
     let shippings = convert_to_ship_requests(&orders, replace_tracking);
     let result = etailflow::post_shipping_order(
         &access_token,
         &merchant_code,
         service_provider,
         &seller,
+        account_code.as_deref(),
         shippings,
     )
     .await?;

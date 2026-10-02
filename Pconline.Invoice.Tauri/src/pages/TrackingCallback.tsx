@@ -34,6 +34,7 @@ interface PlatformInfo {
   provider: number;
   providerName: string;
   seller: string;
+  accountCode?: string | null;
 }
 
 interface TrackingPackageDto {
@@ -85,7 +86,8 @@ export function TrackingCallback({ accessToken }: TrackingCallbackProps) {
 
   const { Title, Text } = Typography;
   const { TextArea } = Input;
-  const getPlatformKey = (item: PlatformInfo): string => `${item.provider}::${item.seller}`;
+  const getPlatformKey = (item: PlatformInfo): string =>
+    `${item.provider}::${item.accountCode?.trim() || item.seller}`;
 
   useEffect(() => {
     invoke<PlatformInfo[]>("platform_list").then(setPlatforms).catch(console.error);
@@ -222,6 +224,7 @@ export function TrackingCallback({ accessToken }: TrackingCallbackProps) {
         merchantCode,
         serviceProvider: platform.provider,
         seller: platform.seller,
+        accountCode: platform.accountCode?.trim() || null,
         orders: ordersToUpload,
         replaceTracking,
       });

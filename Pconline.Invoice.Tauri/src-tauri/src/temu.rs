@@ -1,7 +1,7 @@
 //! Temu 承运商：表头第 0 行，ReadByHeader<TemuInvoice>，无发票号校验，直接插入 shipping_invoice_temu
 
-use crate::invoice::{CarrierStrategy, FileInfoDto};
-use calamine::{open_workbook, Data, Reader, Xlsx};
+use crate::invoice::{read_first_sheet, CarrierStrategy, FileInfoDto};
+use calamine::Data;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -56,16 +56,7 @@ impl CarrierStrategy for TemuStrategy {
             .unwrap_or_default()
             .to_string();
 
-        let mut workbook: Xlsx<std::io::BufReader<std::fs::File>> =
-            open_workbook(path).map_err(|e: calamine::XlsxError| e.to_string())?;
-        let sheet_name = workbook
-            .sheet_names()
-            .get(0)
-            .cloned()
-            .ok_or_else(|| "No worksheet found".to_string())?;
-        let range: calamine::Range<Data> = workbook
-            .worksheet_range(&sheet_name)
-            .map_err(|e: calamine::XlsxError| e.to_string())?;
+        let range = read_first_sheet(path)?;
 
         let header_row_index = 0usize;
         let header_row = range
@@ -80,7 +71,7 @@ impl CarrierStrategy for TemuStrategy {
         let header_map = build_header_map(header_row);
         let items = parse_items(&range, header_row_index, &header_map)?;
         if items.is_empty() {
-            return Err("No records found in Excel.".to_string());
+            return Err("No records found in file.".to_string());
         }
 
         let mut items = items;

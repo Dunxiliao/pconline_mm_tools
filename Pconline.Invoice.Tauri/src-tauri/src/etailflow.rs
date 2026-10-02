@@ -8,6 +8,8 @@ pub struct ShippingOrderRequestWrapper {
     pub service_provider: i32,
     pub merchant_code: String,
     pub seller: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_code: Option<String>,
     pub shippings: Vec<ShipOrderRequest>,
 }
 
@@ -63,6 +65,7 @@ pub async fn post_shipping_order(
     merchant_code: &str,
     service_provider: i32,
     seller: &str,
+    account_code: Option<&str>,
     shippings: Vec<ShipOrderRequest>,
 ) -> Result<EtailflowResponseWrapper<Vec<ShippingOrderResponse>>, String> {
     let base = etailflow_base_url();
@@ -71,6 +74,7 @@ pub async fn post_shipping_order(
         service_provider,
         merchant_code: merchant_code.to_string(),
         seller: seller.to_string(),
+        account_code: account_code.map(str::to_string),
         shippings,
     };
     let client = reqwest::Client::new();

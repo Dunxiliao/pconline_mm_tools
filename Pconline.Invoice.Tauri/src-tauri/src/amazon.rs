@@ -1,4 +1,4 @@
-use crate::invoice::{CarrierStrategy, FileInfoDto};
+use crate::invoice::{is_csv_file, read_first_sheet, CarrierStrategy, FileInfoDto};
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -120,16 +120,7 @@ impl CarrierStrategy for AmazonStrategy {
             .unwrap_or_default()
             .to_string();
 
-        let mut workbook: Xlsx<std::io::BufReader<std::fs::File>> =
-            open_workbook(path).map_err(|e: calamine::XlsxError| e.to_string())?;
-        let sheet_name = workbook
-            .sheet_names()
-            .get(0)
-            .cloned()
-            .ok_or_else(|| "No worksheet found".to_string())?;
-        let range: calamine::Range<Data> = workbook
-            .worksheet_range(&sheet_name)
-            .map_err(|e: calamine::XlsxError| e.to_string())?;
+        let range = read_first_sheet(path)?;
 
         let header_row_index = 4usize;
         let header_row = range
@@ -144,7 +135,7 @@ impl CarrierStrategy for AmazonStrategy {
             .collect();
 
         if excel_headers.is_empty() {
-            return Err("No headers found in Excel file.".to_string());
+            return Err("No headers found in file.".to_string());
         }
 
         let (is_valid, msg) = validate_header_detailed(&excel_headers);
@@ -170,7 +161,13 @@ impl CarrierStrategy for AmazonStrategy {
         } else {
             (
                 parse_items(&range, header_row_index, &header_map)?,
-                parse_adjustments_v1(&mut workbook).unwrap_or_default(),
+                if is_csv_file(path) {
+                    Vec::new()
+                } else {
+                    let mut workbook: Xlsx<std::io::BufReader<std::fs::File>> =
+                        open_workbook(path).map_err(|e: calamine::XlsxError| e.to_string())?;
+                    parse_adjustments_v1(&mut workbook).unwrap_or_default()
+                },
             )
         };
         let row_count = items.len() as i32;

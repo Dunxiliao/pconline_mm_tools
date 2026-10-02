@@ -82,9 +82,13 @@ export function InvoiceUpload() {
       message.warning("Please select a carrier.");
       return;
     }
+    const supportsCsv = carrier !== "OnTrac";
     const selected = await open({
       multiple: true,
-      filters: [{ name: "Excel", extensions: ["xlsx", "xls"] }],
+      filters: [{
+        name: supportsCsv ? "Excel / CSV" : "Excel",
+        extensions: supportsCsv ? ["xlsx", "xls", "csv"] : ["xlsx", "xls"],
+      }],
     });
     if (!selected) return;
     const filePaths = Array.isArray(selected) ? selected : [selected];
