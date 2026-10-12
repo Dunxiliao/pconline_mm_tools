@@ -33,6 +33,38 @@ pub(crate) fn is_csv_file(path: &str) -> bool {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("csv"))
 }
 
+/// Validate required headers and report the exact columns missing from the file.
+pub(crate) fn validate_required_headers(
+    carrier: &str,
+    actual_headers: &[String],
+    required_headers: &[&str],
+    case_sensitive: bool,
+) -> Result<(), String> {
+    let mut missing = Vec::new();
+    for required in required_headers {
+        let present = actual_headers.iter().any(|actual| {
+            let actual = actual.trim();
+            if case_sensitive {
+                actual == *required
+            } else {
+                actual.eq_ignore_ascii_case(required)
+            }
+        });
+        if !present {
+            missing.push(*required);
+        }
+    }
+
+    if missing.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{carrier} invoice file is missing required header column(s): {}. Confirm that the selected carrier is correct and compare the first-row column names with the {carrier} invoice template.",
+            missing.join(", ")
+        ))
+    }
+}
+
 /// 将 CSV 和 Excel 的首个工作表统一为 calamine Range，供各承运商复用同一套解析逻辑。
 pub(crate) fn read_first_sheet(path: &str) -> Result<Range<Data>, String> {
     if is_csv_file(path) {
@@ -123,13 +155,20 @@ pub async fn invoice_process_files(
 
     let mut result = Vec::new();
     for path in file_paths {
-        let file_info = match &carrier {
-            Carrier::Amazon(s) => s.get_file_info(&path)?.0,
-            Carrier::Temu(s) => s.get_file_info(&path)?.0,
-            Carrier::Ups(s) => s.get_file_info(&path)?.0,
-            Carrier::Fedex(s) => s.get_file_info(&path)?.0,
-            Carrier::OnTrac(s) => s.get_file_info(&path)?.0,
-        };
+        let file_info = (match &carrier {
+            Carrier::Amazon(s) => s.get_file_info(&path).map(|(file_info, _)| file_info),
+            Carrier::Temu(s) => s.get_file_info(&path).map(|(file_info, _)| file_info),
+            Carrier::Ups(s) => s.get_file_info(&path).map(|(file_info, _)| file_info),
+            Carrier::Fedex(s) => s.get_file_info(&path).map(|(file_info, _)| file_info),
+            Carrier::OnTrac(s) => s.get_file_info(&path).map(|(file_info, _)| file_info),
+        })
+        .map_err(|error| {
+            let file_name = Path::new(&path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or(&path);
+            format!("{file_name}: {error}")
+        })?;
         result.push(file_info);
     }
     Ok(result)

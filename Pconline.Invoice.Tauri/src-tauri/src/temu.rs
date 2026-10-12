@@ -1,6 +1,6 @@
 //! Temu 承运商：表头第 0 行，ReadByHeader<TemuInvoice>，无发票号校验，直接插入 shipping_invoice_temu
 
-use crate::invoice::{read_first_sheet, CarrierStrategy, FileInfoDto};
+use crate::invoice::{read_first_sheet, validate_required_headers, CarrierStrategy, FileInfoDto};
 use calamine::Data;
 use std::collections::HashMap;
 use std::path::Path;
@@ -64,9 +64,7 @@ impl CarrierStrategy for TemuStrategy {
             .nth(header_row_index)
             .ok_or_else(|| "Header row is missing".to_string())?;
 
-        if !validate_header(header_row) {
-            return Err("File format does not match the selected carrier. Please double check your file and upload again.".to_string());
-        }
+        validate_header(header_row)?;
 
         let header_map = build_header_map(header_row);
         let items = parse_items(&range, header_row_index, &header_map)?;
@@ -123,7 +121,7 @@ fn get_cell(row: &[calamine::Data], map: &HeaderMap, name: &str) -> String {
         .unwrap_or_default()
 }
 
-fn validate_header(header_row: &[calamine::Data]) -> bool {
+fn validate_header(header_row: &[calamine::Data]) -> Result<(), String> {
     let required = [
         "transaction-type",
         "related-id",
@@ -132,12 +130,12 @@ fn validate_header(header_row: &[calamine::Data]) -> bool {
         "sku",
         "total",
     ];
-    let headers: std::collections::HashSet<String> = header_row
+    let headers: Vec<String> = header_row
         .iter()
         .map(|c| c.to_string().trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    required.iter().all(|h| headers.contains(*h))
+    validate_required_headers("Temu", &headers, &required, true)
 }
 
 fn parse_items(

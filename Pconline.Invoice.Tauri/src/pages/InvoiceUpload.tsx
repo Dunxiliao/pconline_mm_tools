@@ -102,7 +102,9 @@ export function InvoiceUpload() {
       setFiles((prev) => [...prev, ...result]);
       appendLog(`Loaded ${filePaths.length} file(s).`, true);
     } catch (e) {
-      appendLog(String(e), true);
+      const error = String(e);
+      appendLog(error, true);
+      message.error(error, 8);
     } finally {
       setLoading(false);
     }

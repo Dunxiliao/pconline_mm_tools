@@ -1,6 +1,6 @@
 //! OnTrac 承运商：表头第 0 行，ReadByHeader<OnTracInvoice>，Check 校验格式并查重 invoice_number
 
-use crate::invoice::{CarrierStrategy, FileInfoDto};
+use crate::invoice::{validate_required_headers, CarrierStrategy, FileInfoDto};
 use calamine::{open_workbook, Data, Reader, Xlsx};
 use chrono::{Datelike, Timelike};
 use std::collections::HashMap;
@@ -117,12 +117,7 @@ impl CarrierStrategy for OnTracStrategy {
             .nth(header_row_index)
             .ok_or_else(|| "Header row is missing".to_string())?;
 
-        if !validate_header(header_row) {
-            return Err(
-                "File format does not match the selected carrier. Please double check your file and upload again."
-                    .to_string(),
-            );
-        }
+        validate_header(header_row)?;
 
         let header_map = build_header_map(header_row);
         let mut items = parse_items(&range, header_row_index, &header_map)?;
@@ -255,7 +250,7 @@ fn excel_serial_display(serial: f64) -> String {
     out
 }
 
-fn validate_header(header_row: &[Data]) -> bool {
+fn validate_header(header_row: &[Data]) -> Result<(), String> {
     let required = [
         "invoice number",
         "billing date",
@@ -326,12 +321,12 @@ fn validate_header(header_row: &[Data]) -> bool {
         "miscellaneous charges",
         "fuel surcharge",
     ];
-    let headers: std::collections::HashSet<String> = header_row
+    let headers: Vec<String> = header_row
         .iter()
-        .map(|c| normalize_column_name(&c.to_string()).to_lowercase())
+        .map(|c| normalize_column_name(&c.to_string()))
         .filter(|s| !s.is_empty())
         .collect();
-    required.iter().all(|h| headers.contains(*h))
+    validate_required_headers("OnTrac", &headers, &required, false)
 }
 
 fn parse_items(

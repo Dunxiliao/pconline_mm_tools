@@ -141,7 +141,9 @@ impl CarrierStrategy for AmazonStrategy {
         let (is_valid, msg) = validate_header_detailed(&excel_headers);
         if !is_valid {
             return Err(
-                msg.unwrap_or_else(|| "File format does not match the selected carrier. Please double check your file and upload again.".to_string())
+                msg.unwrap_or_else(|| {
+                    "Amazon invoice header validation failed. Confirm that the selected carrier is Amazon and use a supported Amazon invoice export format.".to_string()
+                })
             );
         }
 
@@ -628,7 +630,13 @@ fn validate_header_detailed(headers: &[String]) -> (bool, Option<String>) {
     if unexpected.is_empty() {
         (true, None)
     } else {
-        (false, Some(format!("Excel format not supported. Unexpected columns found: {}", unexpected.join(", "))))
+        (
+            false,
+            Some(format!(
+                "Amazon invoice file contains unsupported column(s): {}. Confirm that you selected Amazon and use a supported Amazon invoice export format.",
+                unexpected.join(", ")
+            )),
+        )
     }
 }
 

@@ -1,6 +1,6 @@
 //! UPS 承运商：表头第 0 行，ReadByHeader<UpsInvoice>，RestockInvoices 补全空运单号，校验 invoicenum
 
-use crate::invoice::{read_first_sheet, CarrierStrategy, FileInfoDto};
+use crate::invoice::{read_first_sheet, validate_required_headers, CarrierStrategy, FileInfoDto};
 use calamine::Data;
 use std::collections::HashMap;
 use std::path::Path;
@@ -213,9 +213,7 @@ impl CarrierStrategy for UpsStrategy {
             .nth(header_row_index)
             .ok_or_else(|| "Header row is missing".to_string())?;
 
-        if !validate_header(header_row) {
-            return Err("File format does not match the selected carrier. Please double check your file and upload again.".to_string());
-        }
+        validate_header(header_row)?;
 
         let header_map = build_header_map(header_row);
         let mut items = parse_items(&range, header_row_index, &header_map)?;
@@ -321,16 +319,23 @@ fn get_cell_date(row: &[calamine::Data], map: &HeaderMap, name: &str) -> String 
     normalize_excel_date_text(&get_cell(row, map, name))
 }
 
-fn validate_header(header_row: &[calamine::Data]) -> bool {
+fn validate_header(header_row: &[calamine::Data]) -> Result<(), String> {
     // 对齐 C# UpsStrategy.ValidateHeader：
     // 直接 Trim 后做严格字符串匹配（大小写敏感，不 normalize）。
-    let required = ["Track_Num", "Track_Num_Alt", "Act_Num", "Act_Num_Shipped", "InvoiceNum", "UserID"];
-    let headers: std::collections::HashSet<String> = header_row
+    let required = [
+        "Track_Num",
+        "Track_Num_Alt",
+        "Act_Num",
+        "Act_Num_Shipped",
+        "InvoiceNum",
+        "UserID",
+    ];
+    let headers: Vec<String> = header_row
         .iter()
         .map(|c| c.to_string().trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    required.iter().all(|h| headers.contains(*h))
+    validate_required_headers("UPS", &headers, &required, true)
 }
 
 fn parse_items(

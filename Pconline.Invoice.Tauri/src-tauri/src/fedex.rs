@@ -1,6 +1,6 @@
 //! Fedex 承运商：表头第 0 行，ReadByHeader<FedexInvoice> + ProcessCharges，校验 invoice_number
 
-use crate::invoice::{read_first_sheet, CarrierStrategy, FileInfoDto};
+use crate::invoice::{read_first_sheet, validate_required_headers, CarrierStrategy, FileInfoDto};
 use calamine::Data;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -163,9 +163,7 @@ impl CarrierStrategy for FedexStrategy {
             .nth(header_row_index)
             .ok_or_else(|| "Header row is missing".to_string())?;
 
-        if !validate_header(header_row) {
-            return Err("File format does not match the selected carrier. Please double check your file and upload again.".to_string());
-        }
+        validate_header(header_row)?;
 
         let header_map = build_header_map(header_row);
         let mut invoices = parse_invoices(&range, header_row_index, &header_map)?;
@@ -240,7 +238,7 @@ fn get_cell(row: &[calamine::Data], map: &HeaderMap, name: &str) -> String {
         .unwrap_or_default()
 }
 
-fn validate_header(header_row: &[calamine::Data]) -> bool {
+fn validate_header(header_row: &[calamine::Data]) -> Result<(), String> {
     let required = [
         "Consolidated Account",
         "Bill to Account Number",
@@ -249,12 +247,12 @@ fn validate_header(header_row: &[calamine::Data]) -> bool {
         "Original Amount Due",
         "Express or Ground Tracking ID",
     ];
-    let headers: std::collections::HashSet<String> = header_row
+    let headers: Vec<String> = header_row
         .iter()
         .map(|c| c.to_string().trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    required.iter().all(|h| headers.contains(*h))
+    validate_required_headers("FedEx", &headers, &required, true)
 }
 
 fn parse_invoices(
