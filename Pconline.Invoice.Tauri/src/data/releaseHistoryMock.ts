@@ -11,6 +11,13 @@ export interface ReleaseHistoryItem {
 
 export const MOCK_RELEASE_HISTORY: ReleaseHistoryItem[] = [
   {
+    version: "2.3.9",
+    pubDate: "2026-11-20",
+    notes: [
+      "调整商户配置加载方式，通过用户登录获取服务器配置"
+    ],
+  },
+  {
     version: "2.3.8",
     pubDate: "2026-09-01",
     notes: [

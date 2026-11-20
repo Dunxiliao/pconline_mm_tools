@@ -1,11 +1,11 @@
 ﻿{
-    "version":  "2.3.8",
-    "notes":  "Release 2.3.8",
-    "pub_date":  "2026-09-02T17:07:11Z",
+    "version":  "2.3.9",
+    "notes":  "Release 2.3.9",
+    "pub_date":  "2026-11-20T01:34:18Z",
     "platforms":  {
                       "windows-x86_64":  {
-                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRRHhtN3Jmenp3ZTJrcHArQWFtbWVLc01xdEpCdGZiY05hSzdaOHAwbDRMblNLQkl3RDd1Zm5uTU44Y1JlcjZERWpId2xhU1hheU9wVnZqWEQ5alpvdHZ5bTNsR2hycWdRPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzg4MzY4ODMxCWZpbGU6cGNvbmxpbmVfdG9vbHNfMi4zLjhfeDY0X2VuLVVTLm1zaQpRcmlhbjhpWkFuWmNFeFhKbnRqVUM4amNISUd5S00rQkIvSHplOENFYmpyVGR0Y3Uzb2NHYWFIZFovVThCREswR09IcjNFbUZ2SGJ5OThkL2NDNzlEUT09Cg==",
-                                             "url":  "https://github.com/Dunxiliao/pconline_tools/releases/download/v2.3.8/pconline_tools_2.3.8_x64_en-US.msi"
+                                             "signature":  "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRRHhtN3Jmenp3ZXlxR1ZzdzlvMnVRSng3Nk1nVENFbEprWVpHdVdNclNUdHVTMjhkSGs4ZVJJSGJDR1JxSGE1NWw0d2o1aktlajNyVmNKRFplTml1OFhUcnZncG54Smc4PQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzk1MTM4NDU4CWZpbGU6cGNvbmxpbmVfdG9vbHNfMi4zLjlfeDY0X2VuLVVTLm1zaQpKZjFBMHdpNlZaYjhOVjNJTngwZDRKZWxMZ3pmMUpmKzcvNHFNUElRK0Q4RWZHcUZ0TElZaDgvTGRMTWNsek5qTzNzTVhOMWcwMldkUXdNeVI1azhBdz09Cg==",
+                                             "url":  "https://github.com/Dunxiliao/pconline_tools/releases/download/v2.3.9/pconline_tools_2.3.9_x64_en-US.msi"
                                          }
                   }
 }

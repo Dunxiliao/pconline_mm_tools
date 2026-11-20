@@ -64,6 +64,7 @@ struct RuntimeConfigResponse {
     tracking_upload: Option<bool>,
     invoice_upload: Option<bool>,
     payment_upload: Option<bool>,
+    platforms: Option<Vec<tracking::PlatformInfo>>,
 }
 
 fn auth_base_url() -> String {
@@ -105,6 +106,19 @@ fn parse_error_message(body: &str) -> Option<String> {
 
 fn parse_json_body(text: &str, scene: &str) -> Result<serde_json::Value, String> {
     serde_json::from_str(text).map_err(|e| format!("Parse {} response: {}", scene, e))
+}
+
+fn parse_platforms(cfg: &serde_json::Value) -> Option<Vec<tracking::PlatformInfo>> {
+    let value = cfg
+        .get("platforms")
+        .or_else(|| cfg.get("platform_list"))
+        .or_else(|| cfg.get("platformList"))?;
+    let parsed = if let Some(s) = value.as_str() {
+        serde_json::from_str(s).ok()
+    } else {
+        serde_json::from_value(value.clone()).ok()
+    };
+    parsed.filter(|list: &Vec<tracking::PlatformInfo>| !list.is_empty())
 }
 
 #[tauri::command]
@@ -262,6 +276,8 @@ async fn auth_get_runtime_config(access_token: String) -> Result<RuntimeConfigRe
     let raw: serde_json::Value = serde_json::from_str(&text)
         .map_err(|e| format!("Parse runtime config response: {}", e))?;
     let cfg = raw.get("data").unwrap_or(&raw);
+    let platforms = parse_platforms(cfg);
+    tracking::set_remote_platforms(platforms.clone());
 
     Ok(RuntimeConfigResponse {
         invoice_db_url: pick_str(cfg, &["invoice_db_url", "invoiceDbUrl", "INVOICE_DB_URL"]).map(|s| s.to_string()),
@@ -283,6 +299,7 @@ async fn auth_get_runtime_config(access_token: String) -> Result<RuntimeConfigRe
             .get("payment_upload")
             .and_then(|v| v.as_bool())
             .or_else(|| cfg.get("paymentUpload").and_then(|v| v.as_bool())),
+        platforms,
     })
 }
 
@@ -426,6 +443,8 @@ struct RuntimeConfigPayload {
     wms_db_url: Option<String>,
     etailflow_url: Option<String>,
     merchant_code: Option<String>,
+    #[serde(default)]
+    platforms: Option<Vec<tracking::PlatformInfo>>,
 }
 
 #[tauri::command]
@@ -447,6 +466,9 @@ fn apply_runtime_config(config: RuntimeConfigPayload) {
     }
     if let Some(v) = config.merchant_code.filter(|s| !s.trim().is_empty()) {
         std::env::set_var("ETAILFLOW_MERCHANT_CODE", v);
+    }
+    if config.platforms.is_some() {
+        tracking::set_remote_platforms(config.platforms);
     }
 }
 

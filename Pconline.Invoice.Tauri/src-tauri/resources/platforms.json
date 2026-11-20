@@ -1,8 +1,0 @@
-[
-  { "provider": 4, "providerName": "Walmart", "seller": "Walmart", "accountCode": "" },
-  { "provider": 8, "providerName": "Newegg", "seller": "B0GJ", "accountCode": "B0GJ" },
-  { "provider": 8, "providerName": "Newegg Business", "seller": "V70A", "accountCode": "V70A" },
-  { "provider": 64, "providerName": "Goflow", "seller": "", "accountCode": "pconline" },
-  { "provider": 2, "providerName": "Shipstation", "seller": "", "accountCode": "pconline" },
-  { "provider": 32, "providerName": "Shein mmm", "seller": "", "accountCode": "pconline" }
-]

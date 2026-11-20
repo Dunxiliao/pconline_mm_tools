@@ -1,9 +1,11 @@
 // Tracking Number 回传：解析 Excel + 调用 Etailflow V2 POST /api/orders/shipping
 
 use calamine::{open_workbook, Data, Reader, Xlsx};
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Mutex;
 use tauri::Manager;
 
 use crate::etailflow::{self, OrderLine, Package, ShipOrderRequest};
@@ -36,10 +38,23 @@ pub struct TrackingPackageDto {
 #[serde(rename_all = "camelCase")]
 pub struct PlatformInfo {
     pub provider: i32,
+    #[serde(alias = "provider_name")]
     pub provider_name: String,
     pub seller: String,
-    #[serde(default)]
+    #[serde(default, alias = "account_code")]
     pub account_code: Option<String>,
+}
+
+static REMOTE_PLATFORMS: OnceCell<Mutex<Option<Vec<PlatformInfo>>>> = OnceCell::new();
+
+fn remote_platforms() -> &'static Mutex<Option<Vec<PlatformInfo>>> {
+    REMOTE_PLATFORMS.get_or_init(|| Mutex::new(None))
+}
+
+pub fn set_remote_platforms(platforms: Option<Vec<PlatformInfo>>) {
+    if let Ok(mut guard) = remote_platforms().lock() {
+        *guard = platforms.filter(|list| !list.is_empty());
+    }
 }
 
 /// 从环境变量或内嵌配置读取 ETAILFLOW_MERCHANT_CODE，未设置时默认 pconline（页面不展示，仅上传时使用）
@@ -48,62 +63,50 @@ pub fn get_etailflow_merchant_code() -> String {
     crate::get_config("ETAILFLOW_MERCHANT_CODE").unwrap_or_else(|| "pconline".to_string())
 }
 
-/// 从 .env 或环境变量读取 APP_VERSION，与 lib.rs load_dotenv 路径一致
-const DEFAULT_PLATFORMS_JSON: &str = include_str!("../resources/platforms.json");
-
 fn load_platform_list() -> Vec<PlatformInfo> {
-    // 1. Try exe directory (packaged app: user can place platforms.json next to .exe)
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let path = dir.join("platforms.json");
-            if path.exists() {
-                if let Ok(s) = std::fs::read_to_string(&path) {
-                    if let Ok(list) = serde_json::from_str::<Vec<PlatformInfo>>(&s) {
-                        return list;
-                    }
-                }
-            }
+    if let Ok(guard) = remote_platforms().lock() {
+        if let Some(list) = guard.as_ref().filter(|list| !list.is_empty()) {
+            return list.clone();
         }
     }
-    // 2. Fallback: embedded default
-    serde_json::from_str(DEFAULT_PLATFORMS_JSON).unwrap_or_else(|_| vec![
+    vec![
         PlatformInfo {
             provider: 4,
             provider_name: "Walmart".to_string(),
             seller: "Walmart".to_string(),
-            account_code: None,
+            account_code: Some("Walmart@walmart".to_string()),
         },
         PlatformInfo {
             provider: 8,
             provider_name: "Newegg".to_string(),
             seller: "B0GJ".to_string(),
-            account_code: None,
+            account_code: Some("B0GJ".to_string()),
         },
         PlatformInfo {
             provider: 8,
             provider_name: "Newegg Business".to_string(),
             seller: "V70A".to_string(),
-            account_code: None,
+            account_code: Some("V70A".to_string()),
         },
         PlatformInfo {
             provider: 64,
             provider_name: "Goflow".to_string(),
-            seller: "".to_string(),
-            account_code: None,
+            seller: "pconline".to_string(),
+            account_code: Some("pconline".to_string()),
         },
         PlatformInfo {
             provider: 2,
             provider_name: "Shipstation".to_string(),
             seller: "".to_string(),
-            account_code: None,
+            account_code: Some("shipstation".to_string()),
         },
         PlatformInfo {
             provider: 32,
             provider_name: "Shein mmm".to_string(),
             seller: "".to_string(),
-            account_code: None,
+            account_code: Some("shein".to_string()),
         },
-    ])
+    ]
 }
 
 #[tauri::command]

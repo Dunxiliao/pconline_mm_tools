@@ -5,6 +5,13 @@ export interface LoginRequest {
   password: string;
 }
 
+export interface PlatformInfo {
+  provider: number;
+  providerName: string;
+  seller: string;
+  accountCode?: string | null;
+}
+
 export interface RuntimeConfig {
   invoiceDbUrl?: string;
   odooDbUrl?: string;
@@ -18,6 +25,7 @@ export interface RuntimeConfig {
     invoiceUpload: boolean;
     paymentUpload: boolean;
   };
+  platforms?: PlatformInfo[];
 }
 
 export interface LoginResponse {
@@ -61,6 +69,39 @@ export interface AuthUserItem {
 export interface UserListResult {
   items: AuthUserItem[];
   total: number;
+}
+
+function normalizePlatform(row: Record<string, any>): PlatformInfo | null {
+  const provider = Number(row?.provider);
+  const providerName = String(row?.providerName ?? row?.provider_name ?? "").trim();
+  if (!Number.isFinite(provider) || !providerName) {
+    return null;
+  }
+  return {
+    provider,
+    providerName,
+    seller: String(row?.seller ?? ""),
+    accountCode: row?.accountCode ?? row?.account_code ?? undefined,
+  };
+}
+
+function normalizePlatforms(raw: unknown): PlatformInfo[] | undefined {
+  const rows = Array.isArray(raw)
+    ? raw
+    : typeof raw === "string"
+      ? (() => {
+          try {
+            const parsed = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed : [];
+          } catch {
+            return [];
+          }
+        })()
+      : [];
+  const platforms = rows
+    .map((row) => (row && typeof row === "object" ? normalizePlatform(row as Record<string, any>) : null))
+    .filter((item): item is PlatformInfo => item != null);
+  return platforms.length > 0 ? platforms : undefined;
 }
 
 function normalizeUserItem(row: Record<string, any>): AuthUserItem {
@@ -144,6 +185,7 @@ export async function getRuntimeConfig(accessToken: string): Promise<RuntimeConf
       invoiceUpload: Boolean(config?.invoice_upload ?? config?.invoiceUpload ?? true),
       paymentUpload: Boolean(config?.payment_upload ?? config?.paymentUpload ?? true),
     },
+    platforms: normalizePlatforms(config?.platforms ?? config?.platform_list ?? config?.platformList),
   };
 }
 
